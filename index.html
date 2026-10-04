@@ -1,13 +1,226 @@
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js')
-        .then(registration => {
-          console.log('ZenScreen Service Worker registered with scope:', registration.scope);
-        })
-        .catch(error => {
-          console.error('Service Worker registration failed:', error);
-        });
-    });
-  }
-</script>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZenScreen: Screen Time Tracker</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#6366f1">
+  <link rel="apple-touch-icon" href="https://img.icons8.com/isometric-line/192/timer.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.net/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body { background-color: #0a0a0c; color: #f3f4f6; font-family: system-ui, -apple-system, sans-serif; }
+    .glass { background: rgba(23, 23, 28, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+  </style>
+</head>
+<body class="p-4 md:p-8 max-w-2xl mx-auto pb-20">
+
+  <!-- Header -->
+  <header class="flex justify-between items-center mb-6">
+    <div>
+      <h1 class="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">ZenScreen</h1>
+      <p class="text-xs text-gray-400">Screen Time & Usage Limiter</p>
+    </div>
+    <span class="px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5">
+      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Active Session
+    </span>
+  </header>
+
+  <!-- Live Counter Dashboard -->
+  <div class="glass rounded-2xl p-6 mb-6 text-center shadow-xl relative overflow-hidden">
+    <div class="text-xs uppercase tracking-wider text-gray-400 mb-1">Total Screen Time Today</div>
+    <div id="mainTimer" class="text-5xl font-mono font-bold text-indigo-300 my-2">00:00:00</div>
+    
+    <div class="w-full bg-gray-800 h-2.5 rounded-full overflow-hidden mt-4">
+      <div id="progressBar" class="bg-indigo-500 h-full w-0 transition-all duration-500"></div>
+    </div>
+    <div class="flex justify-between text-xs text-gray-400 mt-2">
+      <span id="usedText">0m spent</span>
+      <span id="limitText">Limit: 120m</span>
+    </div>
+  </div>
+
+  <!-- Quick Limit Configuration -->
+  <div class="glass rounded-2xl p-5 mb-6">
+    <h2 class="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+      <i class="fa-solid fa-sliders text-indigo-400"></i> Set Daily Limit (Minutes)
+    </h2>
+    <div class="flex gap-3">
+      <input type="number" id="limitInput" value="120" min="5" max="1440" class="bg-gray-900/80 border border-gray-700 rounded-xl px-4 py-2 text-sm text-white w-full focus:outline-none focus:border-indigo-500">
+      <button onclick="saveLimit()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-5 py-2 rounded-xl text-sm transition-all shadow-lg shadow-indigo-600/30">
+        Save
+      </button>
+    </div>
+  </div>
+
+  <!-- Focus Pomodoro Section -->
+  <div class="glass rounded-2xl p-5 mb-6 text-center">
+    <h2 class="text-sm font-semibold text-gray-300 mb-2 flex items-center justify-center gap-2">
+      <i class="fa-solid fa-bullseye text-purple-400"></i> Focus Lockdown Mode
+    </h2>
+    <div id="focusTimer" class="text-3xl font-mono font-bold text-purple-300 my-1">25:00</div>
+    <p class="text-xs text-gray-400 mb-4">Block distracting usage and play ambient focus sound</p>
+    <div class="flex justify-center gap-3">
+      <button id="focusBtn" onclick="toggleFocus()" class="bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold px-6 py-2.5 rounded-xl transition-all">
+        Start Focus Session
+      </button>
+    </div>
+  </div>
+
+  <!-- App Usage Simulation Control -->
+  <div class="glass rounded-2xl p-5 mb-6">
+    <h2 class="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+      <i class="fa-solid fa-mobile-screen text-indigo-400"></i> App Usage Simulation
+    </h2>
+    <div class="space-y-4 text-xs">
+      <div>
+        <div class="flex justify-between mb-1 text-gray-300">
+          <span><i class="fa-brands fa-instagram text-pink-400"></i> Social Media</span>
+          <span id="socialTimeText">0 min</span>
+        </div>
+        <input type="range" id="socialSlider" min="0" max="180" value="0" class="w-full accent-pink-500" oninput="updateAppUsage('social', this.value)">
+      </div>
+      <div>
+        <div class="flex justify-between mb-1 text-gray-300">
+          <span><i class="fa-brands fa-youtube text-red-500"></i> Entertainment & Gaming</span>
+          <span id="gameTimeText">0 min</span>
+        </div>
+        <input type="range" id="gameSlider" min="0" max="180" value="0" class="w-full accent-red-500" oninput="updateAppUsage('game', this.value)">
+      </div>
+    </div>
+  </div>
+
+  <!-- Alert Modal Overlay -->
+  <div id="alertModal" class="fixed inset-0 bg-black/80 backdrop-blur-md hidden flex items-center justify-center p-4 z-50">
+    <div class="glass border-red-500/30 rounded-2xl p-6 max-w-xs w-full text-center">
+      <div class="w-12 h-12 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center mx-auto mb-3 text-xl">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+      </div>
+      <h3 class="text-lg font-bold text-white mb-1">Threshold Reached!</h3>
+      <p id="alertMessage" class="text-xs text-gray-300 mb-4">You have exceeded your screen time limit.</p>
+      <button onclick="dismissAlert()" class="w-full bg-red-600 hover:bg-red-500 text-white font-semibold py-2.5 rounded-xl text-xs">
+        Acknowledge & Mute Alarm
+      </button>
+    </div>
+  </div>
+
+  <script>
+    let activeSeconds = 0;
+    let dailyLimitMin = 120;
+    let appUsage = { social: 0, game: 0 };
+    let audioCtx = null;
+    let focusInterval = null;
+    let focusTimeLeft = 1500;
+    let focusActive = false;
+
+    if (localStorage.getItem('zenLimit')) {
+      dailyLimitMin = parseInt(localStorage.getItem('zenLimit'));
+      document.getElementById('limitInput').value = dailyLimitMin;
+    }
+
+    function playAlarm() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 1.2);
+      } catch (e) { console.log(e); }
+    }
+
+    setInterval(() => {
+      activeSeconds++;
+      const hrs = String(Math.floor(activeSeconds / 3600)).padStart(2, '0');
+      const mins = String(Math.floor((activeSeconds % 3600) / 60)).padStart(2, '0');
+      const secs = String(activeSeconds % 60).padStart(2, '0');
+      document.getElementById('mainTimer').innerText = `${hrs}:${mins}:${secs}`;
+      updateProgress();
+    }, 1000);
+
+    function updateProgress() {
+      const simulatedTotalMins = Math.floor(activeSeconds / 60) + appUsage.social + appUsage.game;
+      const pct = Math.min(100, Math.round((simulatedTotalMins / dailyLimitMin) * 100));
+      
+      const bar = document.getElementById('progressBar');
+      bar.style.width = pct + '%';
+      document.getElementById('usedText').innerText = `${simulatedTotalMins}m spent`;
+      document.getElementById('limitText').innerText = `Limit: ${dailyLimitMin}m`;
+
+      if (pct >= 100 && !window.alarmTriggered) {
+        window.alarmTriggered = true;
+        bar.className = 'bg-red-500 h-full transition-all duration-500';
+        showAlert(`You have reached 100% of your ${dailyLimitMin}-minute limit!`);
+      } else if (pct < 100) {
+        window.alarmTriggered = false;
+        bar.className = 'bg-indigo-500 h-full transition-all duration-500';
+      }
+    }
+
+    function saveLimit() {
+      const val = parseInt(document.getElementById('limitInput').value);
+      if (val > 0) {
+        dailyLimitMin = val;
+        localStorage.setItem('zenLimit', val);
+        updateProgress();
+        alert('Daily limit updated!');
+      }
+    }
+
+    function updateAppUsage(type, val) {
+      appUsage[type] = parseInt(val);
+      document.getElementById(`${type}TimeText`).innerText = `${val} min`;
+      updateProgress();
+    }
+
+    function showAlert(msg) {
+      document.getElementById('alertMessage').innerText = msg;
+      document.getElementById('alertModal').classList.remove('hidden');
+      playAlarm();
+    }
+
+    function dismissAlert() {
+      document.getElementById('alertModal').classList.add('hidden');
+    }
+
+    function toggleFocus() {
+      const btn = document.getElementById('focusBtn');
+      if (focusActive) {
+        clearInterval(focusInterval);
+        focusActive = false;
+        btn.innerText = 'Start Focus Session';
+        btn.className = 'bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold px-6 py-2.5 rounded-xl transition-all';
+      } else {
+        focusActive = true;
+        btn.innerText = 'Stop Session';
+        btn.className = 'bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-6 py-2.5 rounded-xl transition-all';
+        focusInterval = setInterval(() => {
+          if (focusTimeLeft > 0) {
+            focusTimeLeft--;
+            const m = String(Math.floor(focusTimeLeft / 60)).padStart(2, '0');
+            const s = String(focusTimeLeft % 60).padStart(2, '0');
+            document.getElementById('focusTimer').innerText = `${m}:${s}`;
+          } else {
+            clearInterval(focusInterval);
+            alert('Focus session complete!');
+          }
+        }, 1000);
+      }
+    }
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('SW Registered:', reg.scope))
+          .catch(err => console.error('SW Failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>
