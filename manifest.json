@@ -1,0 +1,22 @@
+{
+  "short_name": "ZenScreen",
+  "name": "ZenScreen: Screen Time Tracker & Limiter",
+  "icons": [
+    {
+      "src": "https://img.icons8.com/isometric-line/192/timer.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://img.icons8.com/isometric-line/512/timer.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "./index.html",
+  "background_color": "#0a0a0c",
+  "theme_color": "#6366f1",
+  "display": "standalone",
+  "orientation": "portrait",
+  "description": "Track screen time, set usage thresholds, and receive real-time audio alerts."
+}
